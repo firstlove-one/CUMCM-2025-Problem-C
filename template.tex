@@ -1,0 +1,1311 @@
+%! Mode:: "TeX:UTF-8"
+%! TEX program = xelatex
+\PassOptionsToPackage{quiet}{xeCJK}
+\documentclass[withoutpreface,bwprint]{cumcmthesis}
+\usepackage{etoolbox}
+\BeforeBeginEnvironment{tabular}{\zihao{-5}}
+\usepackage[numbers,sort&compress]{natbib}  % 文献管理宏包
+\usepackage[framemethod=TikZ]{mdframed}  % 框架宏包
+\usepackage{url}  % 网页链接宏包
+\usepackage{subcaption}  % 子图宏包
+\usepackage{booktabs}   % 支持 \toprule 等
+\usepackage{tabularx}   % 支持 tabularx 环境与 X 列
+\usepackage{array}      % 支持 \newcolumntype 和 \arraybackslash
+\usepackage{float}      % 支持 [H] 定位
+\newcolumntype{L}{>{\raggedright\arraybackslash}X} % 定义你用的 L 列：左对齐、自动换行
+\usepackage{float}     % 支持 [H]
+\usepackage{multirow}  % 支持 \multirow
+\usepackage{booktabs}  % 支持 \toprule / \midrule / \bottomrule
+
+
+
+\title{基于动态规划算法的 NIPT 检测策略与女胎异常识别方法研究}  % 论文标题
+\tihao{}  % 题号
+\baominghao{}  % 报名号
+\schoolname{}  % 学校
+\membera{}  % 队员a
+\memberb{}  % 队员b
+\memberc{}  % 队员c
+\supervisor{}  % 指导老师
+\yearinput{}
+\monthinput{}
+\dayinput{}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% 正文
+\begin{document}
+
+\maketitle
+\begin{abstract}
+本文研究男胎孕妇无创产前检测（NIPT）最佳时点选择与女胎异常判定问题，建立了多因素驱动的风险评估等模型，采用了改进动态规划算法求解，计算结果对提升临床检测准确性和降低治疗风险具有重要意义。
+
+
+\textbf{针对问题一,}本文选取孕妇年龄、孕妇 BMI、检测孕周、13 号染色体的 Z 值、18 号染色体的 Z 值以及 21 号染色体的 Z 值作为男胎 Y 染色体浓度的\textbf{6个核心影响因素}，明确变量间呈非线性关系，建立了\textbf{梯度提升回归树模型}。之后引入5折交叉验证，以RMSE $=0.031$、$R_{OOF}^2=0.136$验证了模型拟合与泛化性能良好。最后再采用基于Monte Carlo的置换策略对特征重要性进一步挖掘，最后得到\textbf{孕妇 BMI与检测孕周影响最大}。
+
+
+\textbf{针对问题二,}本文构建了一个\textbf{风险函数为目标的优化模型},综合考虑“早检失败重测成本”与“晚检治疗风险”,并引入BMI越大，普遍达标孕周越晚的规律。在此基础上为了控制首检失败率，本文人为增加设定了组内首检时点达标率≥0.95的临床安全约束条件。最后本文使用\textbf{动态规划算法}求解得到最优分组切点及各组最优首检时点，全体平均风险达 \textbf{0.3604}，同时进行收敛性与敏感性分析验证方案稳健。
+
+
+\textbf{针对问题三,}本文延用问题二的优化模型，并在此基础上纳入孕妇年龄、染色体Z值及检测误差等多因素，建立了扩展的协变量时间事件模型和误差修正达标率函数。之后本文采用\textbf{前缀和优化}的动态规划算法进行高效求解，最终将样本划分为\textbf{5个BMI区间}并确定了各组统一推荐检测孕周，同时给出了\textbf{高龄孕妇组内检测后移}的调整建议。敏感性分析表明该多因素优化方案在不同误差扰动下均保持稳健。
+
+
+\textbf{针对问题四,}由于女胎没有具体的指标去确保NIPT的结果是否基本准确，本文首先利用男胎阴性样本建立正常参照体系，进而融合测序质量指标与多染色体Z值等多源证据，并通过\textbf{概率校准}构建\textbf{异常评分模型}；在此基础上，采用\textbf{分层阈值策略}以控制假阳性率，确保判定结果的稳健性与可迁移性。最终，在605例女胎样本中有效判定出\textbf{异常84例}，结果表明该方法在提升女胎染色体异常检测准确性与可解释性方面具有显著效果。
+
+
+\textbf{本文的亮点在于：}采用梯度提升回归树捕捉变量间非线性关系，结合动态规划与前缀和优化实现高效率求解多因素风险最小化分组及各组最优首检时点，并通过分层阈值与概率校准提升女胎异常判定的稳健性与可迁移性。
+
+
+
+\keywords{NIPT\quad  梯度提升回归树\quad  改进动态规划\quad  概率校准\quad }
+\end{abstract}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
+\section{问题重述}
+\subsection{问题背景}
+无创产前检测（NIPT）通过采集母体血液检测胎儿游离 DNA 片段，可早期筛查胎儿 21 号、18 号、13 号染色体异常。但其准确性依赖胎儿性染色体浓度，且检测仅能在孕期 10-25 周开展，其中胎儿异常发现时机直接关联治疗风险。同时，男胎 Y 染色体浓度与孕妇孕周、BMI 紧密相关。然而，传统经验性 BMI 分组及统一检测时点，无法适配孕妇年龄、身高、孕情等个体差异，易导致测序失败与重复检测现象；此外，女胎因无 Y 染色体，其染色体异常判定缺乏系统方法。因此，对影响检测的因素、最佳检测时点和胎儿异常判定进行深入、准确的分析，对于减低治疗窗口期缩短风险和临床精准检测与决策至关重要。
+\begin{figure}[htbp] 
+    \centering  
+    \includegraphics[width=0.8\textwidth]{背景1.jpg}  
+    \caption{NIPT无创产前检测示意图}
+
+    \label{fig:nipt}
+\end{figure}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\subsection{问题提出}
+
+基于上述背景，需利用附件数据建立数学模型解决以下问题：
+
+\textbf{问题一:}  分析胎儿 Y 染色体浓度与孕妇孕周数、BMI 等指标的相关特性，构建关系模型并检验其显著性。
+
+\textbf{问题二:}  以男胎孕妇 BMI 为主要影响因素，对其进行合理分组，确定每组 BMI 区间与最佳 NIPT 时点以最小化潜在风险，并分析检测误差的影响。
+
+\textbf{问题三:} 综合孕妇身高、体重、年龄等因素、检测误差及 Y 染色体浓度达标比例，结合 BMI 对男胎孕妇合理分组，确定每组最佳 NIPT 时点以最小化风险，并分析检测误差的影响。
+
+\textbf{问题四:}  以女胎孕妇 21 号、18 号、13 号染色体非整倍体为判定结果，综合 X 染色体及上述染色体的 Z 值、GC 含量、读段数及相关比例、BMI 等因素，给出女胎异常的判定方法。
+
+针对以上问题，本文采用了以下总体思路框架进行系统性研究：
+\begin{figure}[H] 
+    \centering  
+    \includegraphics[width=1\textwidth]{路线.jpg}  
+    \caption{总体思路框架图}
+
+    \label{fig:nipt}
+\end{figure}
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\section{模型假设}
+
+\noindent 为简化问题，本文做出以下假设：
+
+\begin{itemize}[itemindent=0em]
+\item 本文假设前三个问题中，男胎GC含量不存在过高、过低或分布异常，所有样本可以认定测序质量不存在问题。
+\item 本文假设达标时间 $T^*$ 的分布满足 $F(t\,|\,\cdot)$ 对孕周 $t$ 单调不减，且存在合理右界 $H$。
+\item 本文假设最后一问女胎的正常样本在融合特征空间与男胎阴性近似同分布，以男胎学习得到的概率标尺与分层阈值可迁移用于女胎判定。
+\item 本文假设附件数据是可信的，不存在人为实验操作有误带来的影响。
+\end{itemize}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\section{符号说明}
+\begin{table}[H]
+\centering
+\begin{tabularx}{0.75\textwidth}{CCC}
+\toprule
+符号    & 说明    & 单位 \\
+\midrule
+$n$ & 样本量 & 例 \\
+$k$ & BMI 分组数 & — \\
+$a$ & 孕妇年龄 & 岁 \\
+$b$ & 孕妇 BMI & kg/m$^2$ \\
+$z_{13},\,z_{18},\,z_{21}$ & 13/18/21 号染色体 $Z$ 值 & — \\
+$Z_X$ & X 染色体 $Z$ 值 & — \\
+$y,\,\hat y$ & 胎儿 Y 浓度及其预测值 & 比例 \\
+$T^*$ & 首次达标孕周 & 周 \\
+\bottomrule
+\end{tabularx}
+
+\vspace{4pt}
+\begin{minipage}{0.75\textwidth}
+\raggedright\small 注：表中未说明的符号以首次出现处为准
+\end{minipage}
+
+\label{tab:符号说明}
+\end{table}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\section{问题一的模型的建立和求解}
+\subsection{问题分析}
+本问旨在研究胎儿Y染色体浓度与孕妇BMI等指标的相关特性。首先，结合文献理论与附件GC含量数据实际，本文确定了以孕妇年龄、孕妇BMI、检测孕周、13号染色体的Z值、18号染色体的Z值以及21号染色体的Z值作为核心影响因素。
+
+为进一步探讨胎儿Y染色体浓度与6个核心指标的关联类型，本文通过绘制数据之间的散点图进行检验，明确变量之间呈现非线性关系，构建了以6个相关指标作为自变量，以胎儿Y染色体浓度作为因变量的梯度提升回归树模型。之后本文使用5折交叉验证了模型拟合与泛化性能良好，并且再进一步结合 Monte-Carlo 置换检验与特征重要性评估，验证了模型显著性并得到了孕妇 BMI与检测孕周贡献最大。
+
+
+\begin{figure}[H] 
+    \centering  
+    \includegraphics[width=0.8\textwidth]{Q11.jpg}  
+    \caption{问题一思路图}
+
+    \label{fig:nipt}
+\end{figure}
+
+
+\subsection{胎儿Y染色体浓度与相关指标关系模型的建立与求解}
+
+\subsubsection{核心影响因素筛选}
+本文首先以“胎儿 Y 染色体浓度”为响应变量，对全部候选自变量开展斯皮尔曼秩相关检验，以刻画可能存在的非线性单调关系并提升对异常值的鲁棒性。结合相关系数的大小与显著性，并在孕周/BMI 分层下复核稳健性，筛除贡献弱或不稳定的指标。
+
+在进入建模前对数据质量进行核查，发现 GC 含量整体稳定在合理区间（约 40\%），且与响应的相关性弱、方向不一致，判定其更适合作为质控参照而非核心自变量。
+
+综合上述检验，本文最终确定孕妇年龄、孕妇 BMI、检测孕周、以及 13/18/21 号染色体的 Z 值为影响胎儿 Y 染色体浓度的6 个核心因素；这一结论与现有研究报道相符$^{[1][2]}$。
+
+\subsubsection{非线性关系检验}
+
+为了深入研究胎儿Y染色体浓度与6个核心指标关系，先对数据进行标准化处理，再根据提供的样本对应关系绘画出散点矩阵图如下所示：
+\begin{figure}[H]
+  \centering
+
+  % --- 第一行 ---
+  \begin{subfigure}[b]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{PAPER_scatter_Y_vs_年龄.png}
+    \caption{Y染色体浓度 vs 年龄}
+    \label{fig:y-age}
+  \end{subfigure}\hfill
+  \begin{subfigure}[b]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{PAPER_scatter_Y_vs_检测孕周.png}
+    \caption{Y染色体浓度 vs 检测孕周}
+    \label{fig:y-gestage}
+  \end{subfigure}\hfill
+  \begin{subfigure}[b]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{PAPER_scatter_Y_vs_孕妇BMI.png}
+    \caption{Y染色体浓度 vs 孕妇BMI}
+    \label{fig:y-bmi}
+  \end{subfigure}
+
+  \vspace{0.7em}
+
+  % --- 第二行 ---
+  \begin{subfigure}[b]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{PAPER_scatter_Y_vs_13号染色体的Z值.png}
+    \caption{Y染色体浓度 vs 13号染色体Z值}
+    \label{fig:y-z13}
+  \end{subfigure}\hfill
+  \begin{subfigure}[b]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{PAPER_scatter_Y_vs_18号染色体的Z值.png}
+    \caption{Y染色体浓度 vs 18号染色体Z值}
+    \label{fig:y-z18}
+  \end{subfigure}\hfill
+  \begin{subfigure}[b]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{PAPER_scatter_Y_vs_21号染色体的Z值.png}
+    \caption{Y染色体浓度 vs 21号染色体Z值}
+    \label{fig:y-z21}
+  \end{subfigure}
+
+  \caption{Y染色体浓度与 6 个相关影响因素的散点图}
+  \label{fig:scatter-2x3}
+\end{figure}
+结果显示，Y 染色体浓度与各指标间无线性趋势。例如，孕妇BMI与Y 染色体浓度呈非单调变化、检测孕周与Y 染色体浓度无直线关联。因此排除线性回归方法，本文确定采用监督式多元非线性回归的方法来建立关系模型。
+
+\subsubsection{数据预处理}
+
+
+
+假设共有n个样本，第i个样本的因变量为胎儿Y染色体浓度为变量$y_i$（取值0-1）。自变量向量为：
+\[
+x_i = \left[ a_i,\ b_i,\ t_i,\ z_{13,i},\ z_{18,i},\ z_{21,i} \right]^\top
+\]
+
+
+(1)目标数据变换
+
+为了避免模型训练中输出越界、端点误差权重失衡等问题。在此先对$y_i$进行轻微裁剪，再通过logit 变换，转换目标变量，训练后反变换还原，有效保障数值优化稳定性。具体实现公式如下：
+
+\begin{equation}
+\begin{cases}
+y_i^{\text{clip}} &= \min\left\{\max(y_i, \varepsilon),\ 1-\varepsilon\right\},\quad \varepsilon = 10^{-6}\\
+z_i &= \operatorname{logit}(y_i^{\text{clip}}) = \ln\left(\frac{y_i^{\text{clip}}}{1 - y_i^{\text{clip}}}\right) 
+\end{cases}
+\end{equation}
+
+(2)特征工程优化
+
+针对年龄、BMI、孕周的轻度偏态及染色体 Z 值的长尾 / 离群值，易主导模型训练问题，先对每列特征 $x_{\cdot j}$计算经验分位$p = \hat{F}_j(x)$，再映射到标准正态分位点：
+
+\begin{equation}
+x_{ij}^{\mathrm{(RG)}} = \Phi^{-1}\left(\hat{F}_j(x_{ij})\right)
+\end{equation}
+
+其中 $\Phi^{-1}$ 为标准正态的分位函数。随后对数据进行标准化并做二次多项式扩展，成功捕捉潜在的非线性与低阶交互效应，显著提升模型拟合能力。
+
+
+\subsubsection{梯度提升回归树模型建立}
+
+结合本问6个核心变量、样本量中等的数据特点，梯度提升回归树（GBDT）在小中规模数据上表现稳定$^{[3]}$，既优于强线性假设的多元线性回归，又无需深度网络的大样本支撑，且能通过集成学习降低过拟合风险，因此本文选择其构建非线性回归模型$^{[4]}$，具体求解步骤如下：
+
+
+step1：基线初始化
+
+以训练集目标变量均值作为初始模型值作：
+\begin{equation}
+f_0(\tilde{x}) = \bar{z} = \frac{1}{n} \sum_{i=1}^{n} z_i
+\end{equation}
+
+其中 ,$\tilde{x}$ 为预处理后特征，为迭代提供稳定起点，确保后续优化方向可控。
+
+step2：负梯度残差定向
+
+
+在第 $m$ 轮迭代开始时，基于当前模型
+$f_{m-1}$
+计算样本$\tilde{x}_i$残差 :
+
+\begin{equation}
+r_i^{(m)} = z_i - f_{m-1}(\tilde{x}_i)
+\end{equation}
+
+该残差即平方损失下的负梯度，精准刻画 “未被解释” 的误差结构，为模型优化提供明确方向。
+
+step3：浅树拟合残差
+
+以 $\{(\tilde{x}_i,\, r_i^{(m)})\}$ 作为临时学习样本，训练浅层回归树 $h_m$ 来逼近残差场。通过计算 “特征 - 阈值” 二分划分的残差平方和下降量选择最优分裂点：
+
+\begin{equation}
+\Delta = \sum_{i \in \text{node}} \left(r_i^{(m)} - \bar{r}\right)^2 - \left[ \sum_{i \in L} \left(r_i^{(m)} - \bar{r}_L\right)^2 + \sum_{i \in R} \left(r_i^{(m)} - \bar{r}_R\right)^2 \right]
+\end{equation}
+
+其中, $\bar{r}$, $\bar{r}_L$, $\bar{r}_R$ 分别是对应集合内的残差均值。选择 $\Delta$ 最大的分裂并递归进行，直到满足浅深度、最小叶样本数、最小收益增量等停止条件。
+
+step4：叶值闭式赋值
+
+在平方损失下，每个叶区的最优输出为区内残差均值：
+
+\begin{equation}
+\gamma_{jm} = \frac{1}{|R_{jm}|} \sum_{\tilde{\mathbf{x}}_i \in R_{jm}} r_i^{(m)}
+\end{equation}
+
+小树表达式为：
+
+\begin{equation}
+h_m(\tilde{x}) = \sum_j \gamma_{jm} \cdot 1\{\tilde{x} \in R_{jm}\}
+\end{equation}
+
+完成对误差的针对性修正，提升局部拟合精度。
+
+
+step5：学习率缩减更新
+
+
+得到 $h_m$ 后，将$h_m$ 乘以一个学习率 $\nu \in (0,1]$ 进行缩减更新：
+
+\begin{equation}
+f_m(\tilde{x}) = f_{m-1}(\tilde{x}) + \nu \cdot h_m(\tilde{x})
+\end{equation}
+
+通过 “小步迭代” 让模型逐渐逼近最优，从而有效平衡模型偏差与方差，显著抑制过对噪声的拟合。
+再回到step2迭代计算，直至误差收敛最终构建出适配变量非线性关系的 GBDT 回归模型。
+
+\begin{figure}[H] 
+    \centering  
+    \includegraphics[width=1\textwidth]{算法图.png}  
+    \caption{梯度提升回归树算法流程图}
+
+    \label{fig:nipt}
+\end{figure}
+
+
+
+
+\subsubsection{交叉验证折数选择}
+
+交叉验证是用来验证分类器性能的一种统计分析方法。基本思想是将原始数据进行分组，一部分作为训练集，另一部分作为验证集，首先用训练集对分类器进行训练，再利用验证集来测试训练得到的模型，以此作为评价分类器的性能指标。为客观评估模型泛化能力，本文选择 $K=5$ 进行交叉验证：一方面，5 折能够保证每折验证样本量充足，减少评估结果的波动；另一方面，相比 7 折或 10 折，5 折的计算开销更低。根据图~\ref{fig:cv-k} 的结果，虽然 10 折交叉验证的 $R^2$ 略高，但与 5 折相比提升幅度有限（约 0.01），不足以抵消计算代价和评估方差增加带来的影响，因此最终采用 5 折作为验证方案。
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\textwidth]{Q1_cv_kgrid_R2_pretty.png}
+  \caption{不同折数 $K$ 下$R^2$ 的对比}
+  \label{fig:cv-k}
+\end{figure}
+
+
+
+\subsection{求解结果与分析}
+\subsubsection{关系模型显示表达}
+本问得到的模型的显示表达如下公式所示：
+\begin{equation}
+\setlength{\jot}{2pt}
+\begin{alignedat}{4}
+\operatorname{logit}(\hat y)\; &=\; -2.4752
+&\;& -0.0668\,a
+&\;& -0.0503\,w
+&\;& +0.1122\,b \\[2pt]
+&\;
+&\;& -0.3377\,z_{13}
+&\;& -0.0768\,z_{18}
+&\;& -0.3913\,z_{21} \\[2pt]
+&\;
+&\;& +0.0055\,a z_{21}
+&\;& +0.0072\,w z_{13}
+&\;& +0.0063\,b z_{21} \\[2pt]
+&\;
+&\;& +0.0017\,w^{2}
+&\;& 
+&\;& -0.0124\,z_{21}^{2}\,
+\end{alignedat}
+\end{equation}
+
+由此得到预测的胎儿 Y 浓度（比例）：
+\begin{equation}
+\hat y \;=\; \frac{1}{1+\exp\!\big(-\operatorname{logit}(\hat y)\big)} \, 
+\end{equation}
+\subsubsection{关系模型拟合效果}
+本文GBDT 非线性模型对胎儿 Y 染色体浓度的拟合表现优异：5 折交叉验证中，$\rho_{\text{OOF}}=0.395$、MAE $=0.024$、RMSE $=0.031$、$R_{OOF}^2=0.136$。观测值与拟合值如图~\ref{fig:q1-fit} 所示。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{Q1_true_pred_series.png}
+  \caption{观测值 vs 拟合值}
+  \label{fig:q1-fit}
+\end{figure}
+
+由图~\ref{fig:q1-fit} 可见，预测曲线整体紧跟真实曲线并保持同向上升，说明模型能准确刻画胎儿 Y 浓度的总体趋势与样本间相对排序；在主要密集区间残差更小、贴合度高，极端尾部的偏差增大属数据稀疏下的可预期现象。模型通过非线性学习有效捕捉 BMI 与孕周等因素对目标的复杂影响，结论与生物学先验一致，具备良好的泛化稳定性与可解释性，可为后续的分组与检测时点优化提供可靠依据。
+
+\subsubsection{显著性分析}
+本文首先进行整体显著性检验：在保持特征矩阵不变的前提下，采用基于 Monte Carlo 的置换策略（随机重排标签，重复 $B=199$ 次），并复现与原模型一致的预处理与 5 折交叉验证流程，得到交叉验证 $R_{OOF}^2$ 的原假设置换分布（图~\ref{fig:q1-perm}）。随后评估特征层面的贡献：对单个特征进行重复置换、度量由此导致的交叉验证 $R^2$ 降幅，并以 Benjamini–Hochberg 方法进行 FDR 校正（图~\ref{fig:q1-imp}）。
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Q1_permtest_overall_hist.png}
+    \caption{整体置换检验的 $R_{OOF}^2$ 分布}
+    \label{fig:q1-perm}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Q1_permutation_importance_R2_bar.png}
+    \caption{特征置换重要性（误差条为重复置换的标准差）}
+    \label{fig:q1-imp}
+  \end{subfigure}
+  \caption{模型显著性与变量贡献}
+\end{figure}
+
+图~\ref{fig:q1-perm} 中，观测到的 $R_{OOF}^2$ 落在置换分布的右尾（置换 $p=0.005$），表明模型性能显著优于随机，所捕获的信号并非偶然。图~\ref{fig:q1-imp} 显示，孕妇 BMI 与检测孕周贡献居前，其次为 18 号染色体 Z 值；年龄与 21/13 号 Z 值的贡献较小但并非为零。该排序与单因素 Spearman 相关的方向一致，具有一致性与可解释性。
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\section{问题二的模型的建立和求解}
+\subsection{问题分析}
+
+本问要求确定每组男胎孕妇 BMI 区间与最佳 NIPT 时点以最小化潜在风险。考虑到真实检测中无法直接得到孕周的精确达标时间，本文首先通过区间删失数据处理，将离散达标状态转化为统一“达标时间区间”；再结合问题一BMI与Y染色体浓度非线性结论，构建时间到事件模型，量化BMI与孕周达标率关联，为风险评估提供概率依据。
+
+
+
+随后又综合考虑到早检失败重测成本与晚检治疗风险，因此本文构建单一目标风险函数，得到“BMI-首检时点”量化风险值；同时设定组内达标率≥0.95的临床约束，保障组内首检时点的达标率，贴合临床检测准确性原则。最后在“BMI 连续分组+组内统一时点”的约束下采用动态规划算法，预计算区间风险成本并通过状态转移迭代，求解最优BMI分组与首检时点的全局最优结果,并通过收敛性分析与敏感性分析验证方案稳健性。
+
+
+\begin{figure}[H] 
+    \centering  
+    \includegraphics[width=0.8\textwidth]{Q22.png}  
+    \caption{问题二思路图}
+
+    \label{fig:nipt}
+\end{figure}
+
+
+\subsection{风险评估模型建立}
+
+\subsubsection{删失数据统一表征}
+针对真实检测中无法直接获取胎儿Y染色体首次达标时间\(T_i^*\)（就绪周）精确值的问题，本文基于离散检测记录（\(y_{ij}=1\quad\{Y(t_{ij}) \geq 0.04\}\)，\(y_{ij} \in \{0,1\}\)），将\(T_i^*\)按检测结果划分为三类删失类型以统一刻画时间范围：  
+
+\textbf{区间删失}：若前次未达标、后次达标（\(y_{i,j-1}=0,y_{ij}=1\)且\(t_{i,j-1}<t_{ij}\)），则\(T_i^* \in (L_i,R_i]\)（\(L_i=t_{i,j-1}\)为前次孕周，\(R_i=t_{ij}\)为本次孕周）；  
+
+\textbf{右删失}：若所有检测均未达标，则\(T_i^* \in (L_i,H]\)（\(L_i=\max_j t_{ij}\)为最晚检测孕周，\(H\)为安全右界）； 
+
+ \textbf{左删失}：若首次检测已达标，则\(T_i^* \in (0,t_{i1}]\)（\(t_{i1}\)为首次检测孕周）。  
+
+该处理将复杂离散数据转化为统一的“达标时间区间”格式，为后续建模提供一致标准化输入。
+
+\subsubsection{时间到事件模型建立}
+
+为量化BMI与胎儿Y染色体达标率（≥4\%）的孕周关联，定义累积分布函数：
+
+\begin{equation}
+    F(t \mid b) = \Pr\quad(T^* \leq t \mid \text{BMI} = b)
+\end{equation}
+
+这是一条对时间 t 单调递增的曲线。该曲线表明BMI为\(b\)的人群在孕周\(t\)前达标的比例。
+
+结合问题一“BMI与Y染色体浓度非线性相关”结论，本文采用位置-尺度对数逻辑斯蒂模型，具体形式如下：
+
+\begin{equation}
+\begin{cases}
+F(t \mid b) &= \sigma\left(\frac{t - \mu(b)}{s(b)}\right)\\
+\sigma(x)& = \frac{1}{1 + e^{-x}} \\
+\mu(b) &= m_0 + m_1 b + m_2 b^2 \nonumber \\
+s(b) &= \exp(s_0 + s_1 b) > 0
+\end{cases}
+\end{equation}
+
+其中，位置参数\(\mu(b)\)决定曲线拐点位置，随BMI增大而增大，体现“BMI越高，达标时间整体右移”的规律；尺度参数\(s(b)\)保证非负性，控制曲线陡峭度，直观反映NIPT结果准确性与BMI、孕周的关联特性。
+
+
+
+
+\subsubsection{单一目标风险函数构建}
+
+为综合“早检失败重测成本”与“晚检治疗风险”，构建可优化的风险指标，贴合临床“尽早检测但避免失败”的需求，本文定义BMI为\(b\)的人群在首检时点\(t\)的平均风险：  
+\begin{equation}
+R(t \mid b) = F(t \mid b) \cdot w(t)
++\big(1 - F(t \mid b)\big) \cdot 
+\Big[C_{\mathrm{retest}} + \mathbb{E}\big[w(T^*) \mid T^* > t, b\big]\Big]
+\end{equation} 
+
+式中：$w(t)$为晚发现时间权重，采用分段线性函数刻画临床风险直觉，体现“孕周越晚，风险越高”的实际情况：
+
+\begin{equation}
+w(t) = 
+\begin{cases}
+0, & t \leq 12\\
+\alpha \cdot \dfrac{t - 12}{27 - 12}, & 12 < t \leq 27\\
+\alpha + \beta \cdot \dfrac{t - 27}{H - 27}, & t > 27\quad (\beta \gg \alpha)
+\end{cases}
+\end{equation}
+
+$C_{\mathrm{retest}}$为早检失败的一次性重测成本； 
+
+条件期望用 $F$ 的尾部截断积分近似：
+\begin{equation}
+\mathbb{E}\left[w(T^*) \mid T^* > t, b\right] \approx 
+\frac{\int_t^{H} w(u) \, dF(u \mid b)}{1 - F(t \mid b)} 
+\label{eq:condExp}
+\end{equation}
+
+
+其中 $\mathcal{G}$ 是细粒度时间网格，$\Delta$ 为其步长。
+
+
+
+该函数将“达标概率”与“风险后果”结合，得到“特点BMI-首检时点”的量化风险值，为后续优化提供目标函数。
+
+
+\subsubsection{模型汇总}
+
+\textbf{(1)目标函数}
+
+
+将样本按BMI升序重排为\(b(1) \leq \dots \leq b(n)\)，给定组数\(k\)，需确定\(k\)个连续区间\(G_1=[1..j_1],G_2=[j_1+1..j_2],\dots,G_k=[j_{k-1}+1..n]\)及每组统一首检时点\(t_i\)，优化目标为最小化总体风险：  
+\begin{equation}
+\min_{\{G_i\}, \{t_i\}} \sum_{i=1}^{k} \sum_{j \in G_i} R(t_i \mid b_{(j)})
+\label{eq:obj}
+\end{equation} 
+
+\textbf{(2)约束条件}
+
+\textbf{连续覆盖：}$k\!-\!1$ 个切点把按 BMI 升序的样本索引区间 $[1..n]$ 切成 $k$ 段的连续子区间。保证每一组是 BMI 相邻人群，避免非连续分组导致的临床解释不一致：
+
+\begin{equation}
+\begin{cases}
+1 \le j_1 < j_2 < \cdots < j_{k-1} < n\\
+G_1=[1..j_1]\\
+G_i=[j_{i-1}\!+\!1..j_i]\ (i=2..k-1)\\
+G_k=[j_{k-1}\!+\!1..n]
+\end{cases}
+\end{equation} 
+
+\textbf{互斥完备：}各组两两不交叠，且并集恰为全体样本,确保每位个体恰好归属一个 BMI 组：
+
+\begin{equation}
+\begin{cases}
+\bigcup_{i=1}^{k} G_i = [1..n]\\
+G_i \cap G_{i'} = \varnothing\ (i\ne i')
+\end{cases}
+\end{equation} 
+
+
+\textbf{首检时点取值域}：由于不能确定浓度刚达标的具体时间，每组统一首检时点 $t_i$ 只能取自离散候选网格：
+
+\begin{equation}
+\begin{cases}
+t_i \in \mathcal{T}\\
+t_{\min}\le t_i \le t_{\max}(=H),\quad i=1,\dots,k
+\end{cases}
+\end{equation} 
+
+
+\textbf{单调合理性}：BMI越高的组，其推荐时点不早于 BMI 较低的组：
+\begin{equation}
+t_{i+1}\ \ge\ t_i,\qquad i=1,\dots,k-1
+\end{equation} 
+
+
+\textbf{组内就绪率阈值}：本文引入在推荐时点 $t_i$，第 $i$ 组个体“已达标”的平均概率不低于阈值 $\tau_{\mathrm{ready}}=0.95$。条件可限制过早或过晚导致的失效率，保证首检命中率。\\
+\[
+\frac{1}{|G_i|}\sum_{j\in G_i} F(t_i \mid b_{(j)}) \;\ge\; \tau_{\mathrm{ready}}\ (=0.95),\qquad i=1,\dots,k
+\]
+
+\textbf{(3)决策变量}
+
+\textbf{分组切点：}
+\[
+j_1,\dots,j_{k-1}
+\]
+
+$j_1,\dots,j_{k-1}$表示按BMI升序的样本索引区间 $[1..n]$ 的 $k\!-\!1$ 个切点，决定 $k$ 个连续组的边界。
+
+\textbf{组内统一首检时点：}
+
+\[
+t_1,\dots,t_k
+\]
+
+$t_1,\dots,t_k$表示每个 BMI 组推荐的首检孕周。
+
+\subsection{动态规划算法求解}
+
+由于本文需要在“BMI连续分组+组内统一时点”约束下，最小化总体风险，若采用枚举分组方案复杂度极高，所以本文通过动态规划高效求解全局最优$^{[5]}$。
+
+\subsubsection{区间与时点代价的预计算}
+
+记样本按 BMI 升序排列。对任意区间 $[p,q]$ 及候选时点 $t \in \mathcal{T}$，定义该区间在时点 $t$ 的风险：
+
+\[
+\mathrm{Cost}([p,q], t) = \sum_{j=p}^{q} R(t \mid b_{(j)})
+\]
+
+
+
+若区间 $[p,q]$ 在时点 $t$ 不满足安全约束（如``组内平均就绪率 $\geq \tau_{\mathrm{ready}}$''），则置 $\mathrm{Cost}([p..q], t) = +\infty$。进一步令
+
+\[
+\mathrm{Cost}^*([p,q]) = \min_{t \in \mathcal{T}} \mathrm{Cost}([p,q], t), \quad 
+t^*([p,q]) = \arg\min_{t \in \mathcal{T}} \mathrm{Cost}([p,q], t)
+\]
+
+本问采用直接累加的朴素方式计算上述和式，对每个 $([p..q], t)$ 逐项累加并判约束。
+
+\subsubsection{状态转移方程构建}
+定义状态\(dp[g][j]\)表示“用\(g\)组覆盖前\(j\)个样本”的最小总代价，状态转移方程如下：  
+\begin{equation}
+\begin{cases}
+\mathrm{dp}[1][j] &= \mathrm{Cost}^*([1,j]) \\
+\mathrm{dp}[g][j] &= \min\limits_{i < j} \left\{ \mathrm{dp}[g-1][i] + \mathrm{Cost}^*([i+1,j]) \right\}, \quad g = 2, \dots, k
+\end{cases}
+\end{equation}
+
+
+通过回溯\(dp[k][n]\)（\(n\)为总样本数），最终可得到最优分组切点\(\{j_1,\dots,j_{k-1}\}\)及各组最优首检时点\(\{t^*([p,q])\}\)。
+
+
+\subsection{求解结果}\label{sec:q2_results}
+
+本问分组区间、样本量与推荐检测孕周汇总见表~\ref{tab:q2_groups}。
+
+\begin{table}[H]
+\centering
+\caption{BMI 分组结果与推荐检测孕周}\label{tab:q2_groups}
+\begin{tabular}{lccc}
+\toprule
+组别 & BMI 区间 & 样本量 & 推荐检测孕周\\
+\midrule
+组1 & [20.70,\,31.10] & 124 & 15.5\\
+组2 & [31.11,\,33.34] & 76  & 16.5\\
+组3 & [33.38,\,36.25] & 48  & 17.5\\
+组4 & [36.29,\,39.30] & 15  & 19.5\\
+组5 & [40.14,\,46.87] & 4   & 24.5\\
+\bottomrule
+\end{tabular}
+\end{table}
+基于表~\ref{tab:q2_groups} 的分组与推荐时点，下面从“就绪性—时点”和“人均风险—时点”两个维度作并列对照（见图~\ref{fig:q2_ready_risk}）。
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.485\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{q2_summary_constrained.png}
+    \caption{各 BMI 组的就绪曲线与推荐时点}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.485\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{q2_group_risk_curves_constrained.png}
+    \caption{各 BMI 组的人均风险曲线}
+  \end{subfigure}
+  \caption{就绪性与风险}
+  \label{fig:q2_ready_risk}
+\end{figure}
+
+左图将表~\ref{tab:q2_groups} 各组的推荐孕周叠加到对应 BMI 代表值的就绪曲线上：BMI 越低的组别越早接近饱和值，推荐时点更靠前；高 BMI 组的曲线明显右移。
+右图从风险角度验证推荐时点的合理性：各组风险曲线均在表~\ref{tab:q2_groups} 的推荐孕周附近达到谷底——过早检测会因就绪不足带来复检与等待成本，过晚检测又因时间权重上升而增大风险。
+采用表中推荐时点后，全体样本的平均风险为 0.3604。
+
+\subsection{敏感性分析}
+
+为评估按 BMI 分组与组内最佳检测孕周的稳健性，本文在“生物学合理范围”内做两类扰动，并以
+各组推荐孕周相对基线的变化不超过 0.5 周作为稳健判据，同时跟踪总体平均风险的变化。
+
+首先进行扰动设定：
+\begin{itemize}
+  \item 阈值偏移（系统性误差）：将达标阈值在 3.8\%--4.2\% 间扫描（步长 0.1\%）。
+  \item 近阈值翻转（随机误差）：对接近阈值（与阈值相差不超过 0.3\%）的观测，以 0、1\%、2\% 概率翻转达标标签。
+\end{itemize}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.485\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{sens_thresh_panel}
+    \caption{阈值偏移的敏感性}
+    \label{fig:sens-thresh}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.485\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{sens_flip_panel}
+    \caption{近阈值翻转的敏感性}
+    \label{fig:sens-flip}
+  \end{subfigure}
+  \caption{敏感性分析}
+  \label{fig:sens-panels}
+\end{figure}
+
+见图~\ref{fig:sens-panels}（其中(a) 为阈值偏移，(b) 为近阈值翻转）。对(a) 而言，横轴为阈值；左轴显示各组的“推荐孕周相对基线的变化”，灰色虚线为 $\pm 0.5$ 周判据；右轴为“总体平均风险相对基线的变化”。绿色阴影标出满足稳健性的阈值区间，竖直虚线为基线阈值。当阈值处于 0.039--0.040 时，所有分组的变化均不超过 0.5 周，总体风险变化约 -0.0222--0.0000；阈值升至 $\ge 0.041$ 或降至 0.038 时，个别组超过 0.5 周，且总体风险出现上行趋势。
+
+对(b) 而言，横轴为在带宽 $\pm 0.3\%$ 内设置的翻转概率。各组的“推荐孕周相对基线的变化”基本为 0，总体平均风险变化也接近 0，表明 0--2\% 的随机翻转对结论影响可以忽略。
+
+在上述扰动范围内，BMI 分组边界与组内推荐检测孕周总体稳健。小幅阈值偏移不改变结论，近阈值 0--2\% 的随机翻转影响极小。
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\section{问题三的模型的建立和求解}
+\subsection{问题分析}
+
+
+本问在问题二基础上，新增检测误差、胎达标比例两个关键因素，纳入问题一的结论，综合这些变量优化男胎孕妇BMI分组及最佳NIPT时点以最小化潜在风险。因此相比于问题二，本问需要引入假阴性、假阳性概念构建检测误差模型。同时延用第二问的单一目标风险函数，在动态规划算法中通过前缀和优化关键步骤显著提升求解效率，最后本文通过自助法和扰动Y染色体浓度验证分组及时点的稳健性。
+\begin{figure}[H] 
+    \centering  
+    \includegraphics[width=0.8\textwidth]{33.jpg}  
+    \caption{问题三思路图}
+
+    \label{fig:nipt}
+\end{figure}
+
+
+\subsection{风险评估模型建立}
+本文以问题二的风险评估框架为基础，通过扩展协变量维度、引入检测误差机制，构建更全面的风险评估模型。
+
+\subsubsection{协变量体系扩展}
+结合问题一的相关性分析结论，确定6个核心影响因子构成协变量向量，具体表达式如下：
+\[
+\mathbf{x}_i = [b_i,  a_i,  z_{13,i},  z_{18,i},  z_{21,i}]^\top
+\]
+
+其中，$b_i$为第$i$位孕妇的BMI值，$a_i$为其年龄，$z_{13,i}, z_{18,i}, z_{21,i}$分别为13号、18号、21号染色体的Z值，该向量全面涵盖孕妇个体特征与胎儿染色体基础信息。
+
+\subsubsection{含协变量的时间到事件模型建立}
+
+延续问题二的位置-尺度对数逻辑斯蒂思想，构建对孕周$t$单调递增的达标比例曲线，同时让位置参数与尺度参数均受协变量调控，反映多因素对达标时间的综合影响：
+\[
+\begin{cases}
+F(t \mid \boldsymbol{x}) = \sigma\left( \frac{t - \mu(\boldsymbol{x})}{s(\boldsymbol{x})} \right) \\
+\sigma(u) = \frac{1}{1 + e^{-u}} \\
+\mu(\boldsymbol{x}) = \beta_0 + \beta_b b + \beta_a a + \beta_{13} z_{13} + \beta_{18} z_{18} + \beta_{21} z_{21} + \beta_{b^2} b^2 \\
+s(\boldsymbol{x}) = \exp(s_0 + s_1 b) > 0
+\end{cases}
+\]
+
+
+\subsubsection{检测误差修正与有效达标率}
+考虑到临床检测中存在的人为误差，定义假阴性率$\alpha$（实际达标但判定未达标）与假阳性率$\beta$（实际未达标但判定达标），据此修正原始达标率，得到有效达标率：
+\begin{equation}
+    F_{\text{eff}}(t \mid \mathbf{x}) = (1 - \alpha) F(t \mid \mathbf{x}) + \beta [1 - F(t \mid \mathbf{x})]
+\end{equation}
+
+该式通过加权整合真实达标与误差判定的概率，更精准地反映实际检测场景下的达标效果。
+
+
+\subsubsection{单一目标风险函数构建}
+本文以“人均风险最小化”为目标，结合有效达标率、晚发现权重$w(t)$与复检成本$C_{\text{retest}}$，构建风险函数：
+\begin{equation}
+R(t \mid \mathbf{x}) = F_{\text{eff}}(t \mid \mathbf{x}) \, w(t)
++ \big[1 - F_{\text{eff}}(t \mid \mathbf{x})\big] \left( C_{\text{retest}} + \mathbb{E}[w(T^*) \mid T^* > t, \mathbf{x}] \right)
+\end{equation}
+其中，条件期望$E\left[ w(T^*) \mid T^* > t, \boldsymbol{x} \right]$采用截断积分近似：
+\[
+\mathbb{E}[w(T^*) \mid T^* > t, \mathbf{x}] \approx 
+\frac{\sum_{u \in \mathcal{G}, \, u > t} w(u) \, \left[ F(u \mid \mathbf{x}) - F(u - \Delta \mid \mathbf{x}) \right]}{1 - F(t \mid \mathbf{x})}
+\]
+
+式中，$G$为孕周离散集合，$\Delta$为孕周步长（取0.5周）。约束条件方面，除保留问题二“BMI连续分段、组内统一时点、组内达标比例$\geq$预设阈值”外，新增“高龄孕妇风险权重系数”（$\geq35$岁孕妇权重提升1.2倍），以体现年龄差异的影响。
+
+
+\subsubsection{模型汇总}
+延用第二问的决策变量和目标优化模型：
+\[
+\min_{\{G_i\},\,\{t_i\}}\;\; 
+\sum_{i=1}^{k}\;\sum_{j\in G_i}\; R\!\left(t_i\mid \mathbf{x}_{(j)}\right)
+\]
+\begin{equation}
+s.t.
+\begin{cases}
+1 \le j_1 < j_2 < \cdots < j_{k-1} < n\\
+G_1=[1..j_1]\\
+G_i=[j_{i-1}\!+\!1..j_i]\ (i=2..k-1)\\
+G_k=[j_{k-1}\!+\!1..n]\\
+\bigcup_{i=1}^{k} G_i = [1..n]\\
+G_i \cap G_{i'} = \varnothing\ (i\ne i')\\
+t_i \in \mathcal{T}\\
+t_{\min}\le t_i \le t_{\max}(=H),\quad i=1,\dots,k\\
+t_{i+1}\ \ge\ t_i,\qquad i=1,\dots,k-1\\
+\frac{1}{|G_i|}\sum_{j\in G_i} F(t_i \mid \mathbf{x}_{(j)}) \;\ge\; \tau_{\mathrm{ready}}\ ,\qquad i=1,\dots,k\\
+\end{cases}
+\end{equation}
+
+
+
+\subsection{改进动态规划算法求解}
+本文针对多变量导致的算法复杂度激增问题，在问题二DP框架基础上，引入前缀和优化$^{[6]}$，实现关键子问题求解效率的提升。
+
+\subsubsection{前缀和构建与区间查询优化}
+
+\textbf{（a）样本排序与边界约定}：将所有样本按BMI升序排列，约定风险前缀和$P_t[0] = 0$、达标率前缀和$S_t[0] = 0$（$t$为候选检测时点）。
+
+ \textbf{（b）前缀和预计算}：对每个候选时点$t$，预先计算截至第$j$个样本的风险累计和与达标率累计和：
+   \[
+   P_t[j] = \sum_{u=1}^j R(t \mid b(u)), \quad S_t[j] = \sum_{u=1}^j F(t \mid b(u))
+   \]
+   
+\textbf{（c）区间查询加速}：任意区间$[p, q]$在时点$t$的风险成本与平均达标率可通过前缀和差值快速计算，时间复杂度从$O(q-p+1)$降至$O(1)$：
+   \[
+   \text{Cost}([p,q], t) = P_t[q] - P_t[p-1], 
+\overline{F}([p,q], t) = \frac{S_t[q] - S_t[p-1]}{q - p + 1}
+\\
+   \]
+
+若$\overline{F}([p,q], t)$未达预设阈值，则直接判定该时点不可行，减少无效计算。
+
+\subsubsection{状态转移方程与最优解求解}
+沿用问题二的DP状态定义，设$dp[g][j]$表示将前$j$个样本分为$g$组的最小总风险，状态转移方程为：
+\[
+\begin{cases}
+dp[1][j] = \text{Cost}^*([1,j]) \\
+dp[g][j] = \min\limits_{i < j}\left\{ dp[g-1][i] + \text{Cost}^*([i+1,j]) \right\}, \quad g = 2, ..., k
+\end{cases}
+\]
+
+
+\subsubsection{时间复杂度分析}
+与问题二相比，本问算法复杂度优化显著：问题二未引入前缀和时，总复杂度为$O(kn^2|T|)$（$k$为分组数，$n$为样本数，$|T|$为候选时点数量）；引入前缀和后，区间成本与达标率查询降至常数时间，总复杂度降至$O(kn|T| + n|T|)$，在样本量$n > 100$时，求解效率提升约$n$倍，可快速处理高维度协变量场景。
+
+
+\subsection{求解结果与分析}
+在相同BMI区间内存在不同年龄段的孕妇，不同年龄推荐孕周是不同。根据世界卫生组织与国际妇产科联盟关于青少年与高龄生育的标准$^{[7]}$，将大于35岁的孕妇定义为高龄孕妇，年龄在20--35岁之间的为适龄孕妇，高龄孕妇的风险显著高于适龄孕妇的风险。
+\subsubsection{求解结果}
+\begin{table}[H]
+\centering
+\caption{第三问分组结果与统一推荐时点}
+\label{tab:q3-groups}
+\begin{tabular}{ccccc}
+\toprule
+组别 & BMI 区间 & 样本量 $n$ & ≥35 岁人数  & 推荐孕周 \\
+\midrule
+1 & $[20.70,\ 31.75]$ & 138 & 8 & 16.5 \\
+2 & $[31.78,\ 33.04]$ & 40 & 2 & 18.0 \\
+3 & $[33.09,\ 34.97]$ & 49 & 5 & 19.0 \\
+4 & $[35.02,\ 36.93]$ & 24 & 0 & 20.5 \\
+5 & $[37.13,\ 46.88]$ & 16 & 1 & 25.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+表~\ref{tab:q3-groups} 给出了离散的推荐点，但达标过程本质上是随孕周单调演化的连续现象。为刻画这种演化并量化不确定性，本问基于 AFT 模型，并通过自助法（bootstrap）计算点带置信区间。图~\ref{fig:q3-combined} 左图展示了五个 BMI 组在 $10$–$25$ 周的达标比例及其 95\% 置信带；各组曲线单调上升，且 BMI 越高的组整体达标越晚、置信带略宽，这与经验一致。为便于单组评阅，附录中图~\ref{fig:q3-groups-ci-single} 进一步给出每个组的单独曲线与置信带。
+
+为了检验表中“统一检测时点”的外推合理性，图~\ref{fig:q3-combined} 右图选取“组内协变量中位数”构造各组典型个体，绘制其就绪曲线并用竖线标注推荐孕周。可以看到，竖线大多位于曲线由陡峭上升段过渡至平台区的邻域，既保证达标概率，又避免过晚检测带来的时间成本；不同组之间的竖线保持非降且满足最小间隔约束，从而降低了同日集中检测的调度风险。
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.485\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{q3_ready_groups_ci.png}
+    \caption{各 BMI 组达标比例曲线及 95\% 置信带}
+    \label{fig:q3-groups-all}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.485\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{q3_group_curves_opt.png}
+    \caption{各组典型个体的就绪曲线及统一推荐孕周}
+    \label{fig:q3-med-curve}
+  \end{subfigure}
+  \caption{达标比例与典型曲线}
+  \label{fig:q3-combined}
+\end{figure}
+
+\subsubsection{结果分析}
+综合表~\ref{tab:q3-groups} 与图~\ref{fig:q3-groups-all}—\ref{fig:q3-med-curve} 的证据可得：
+
+（1）达标轨迹随 BMI 分层呈系统性右移且单调上升，置信带亦随 BMI 略有展宽，表明 BMI 与达标时间之间存在稳定的负向关联与异质性增加，这与领域先验一致；
+
+（2）各组的统一推荐时点均能在概率意义上实现预设就绪率目标，且位置多落于曲线由陡峭上升段向平台期过渡的邻域，兼顾较高通过率与有限的检测时延；
+
+（3）对于组1--组4的高龄孕妇，检测时点相对组内统一推荐应适当后移。
+
+
+\subsection{敏感性分析}
+
+为验证稳健性，本文进行两类单因素敏感性：(i) 调整 Y 浓度达标阈值；(ii) 在 Y 值上叠加绝对高斯测量误差并多次重复求解。
+两图的左轴为人均总风险 \(\mathrm{avgCost}\)（实线），右轴为平均推荐周 \(\bar t\)（虚线）。
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.49\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{q3_sens_threshold.png}
+    \caption{阈值敏感性}
+    \label{fig:sens-threshold}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.49\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{q3_sens_noise.png}
+    \caption{测量误差敏感性}
+    \label{fig:sens-noise}
+  \end{subfigure}
+  \caption{敏感性分析总览}
+  \label{fig:sensitivity-overview}
+\end{figure}
+
+
+（1）\textbf{阈值敏感性：}阈值提高会推迟推荐检测时点并增加总体风险。具体地，阈值由 \(0.035\!\to\!0.045\) 时，\(\mathrm{avgCost}\) 单调上升（约 \(0.38\!\to\!0.72\)），\(\bar t\) 相应后移（约 \(18.1\!\to\!21.6\) 周）；这与时间权重 \(w(t)\) 随孕周上升的设定一致。
+
+（2）\textbf{测量误差敏感性：}在常见噪声范围内（标准差 \(0\!\sim\!0.006\)），两项指标的中心值基本稳定（\(\mathrm{avgCost}\approx 0.54\text{–}0.56\)，\(\bar t\approx 19.4\text{–}19.6\) 周）；主要变化体现在不确定性上：噪声增大使 95\% 置信区间变宽，但中心值变化很小，表明方案对应测误差不敏感。
+
+（3）\textbf{总体结论：}在合理阈值区间（\(0.035\!\sim\!0.050\)）与常见噪声水平（标准差 \(\le 0.006\)）下，\(\mathrm{avgCost}\) 与 \(\bar t\) 的中心值基本不变，仅出现轻微区间增宽；分组边界与推荐孕周保持一致性，模型稳健性良好。
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\section{问题四的模型的建立和求解}
+\subsection{问题分析}
+本问需构建女胎染色体非整倍体异常的判定模型。由于女胎缺乏Y染色体浓度作为直接判定依据，其异常检测面临特征缺失与标签稀缺的双重挑战。现有研究$^{[8,9,10]}$表明，胎儿性别与各项检测指标之间无显著差异，因此本文首先基于男胎阴性样本，采用分位数自适应方法设定各质量指标的阈值，对明显偏离正常范围的样本标记为“无效—复检”；随后，通过X染色体Z值的一致性检验，估计其正常参考范围。
+
+在此基础上，本文综合三条染色体Z值、X染色体正常范围及测序过程指标，以男胎阴性样本作为正常参照集、男胎阳性样本作为弱监督信号，构建多源融合的异常评分模型，并采用等值回归将原始评分校准为概率输出。进一步地，在男胎阴性样本的折外预测概率上，按孕周（GA）和BMI分层选择阈值，使假阳性率控制在目标范围内；最终，将所得阈值应用于女胎数据集，完成异常判定。
+\begin{figure}[H] 
+    \centering  
+    \includegraphics[width=0.8\textwidth]{Q4.jpg}  
+    \caption{问题四思路图}
+
+    \label{fig:nipt}
+\end{figure}
+
+\subsection{基于迁移学习与多源证据融合的判定模型建立与求解}
+\subsubsection{指标定义与样本分组}
+
+\textbf{(a)核心指标分类}
+
+为清晰区分 “数据质量影响因素” 与 “生物学异常信号”，将输入指标划分为两类：
+
+\begin{table}[H]
+\centering
+\caption{核心指标说明}
+\label{tab:indicator_classification_q4}
+\setlength{\tabcolsep}{4pt} % 调整列间距
+\begin{tabular}{ccc} % 本表为3列
+\toprule
+\textbf{指标类别} & \textbf{具体指标} & \textbf{指标定义} \\
+\midrule
+\multirow{5}{*}{测序过程质量指标}
+ & GC含量 & 全基因组中G/C碱基的比例 \\
+ & 总读段数（reads） & 测序产生的原始读段数量 \\
+ & 比对率（map\_rate） & 读段匹配到参考基因组的比例 \\
+ & 重复率（dup\_rate） & 重复读段占总读段的比例 \\
+ & 过滤率（filter\_rate） & 因低质量等被剔除的读段比例 \\
+\midrule
+\multirow{2}{*}{生物学信号指标}
+ & 染色体Z值 & 染色体拷贝数偏离正常水平的量化值 \\
+ & 孕妇BMI/孕周（GA） & 孕妇体重指数/怀孕周数 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{(b)样本分组策略}
+
+本文基于染色体异常状态与性别，将数据集划分为三组，解决女胎无标签难题：
+
+\textbf{-}男胎阴性样本：经临床确认无21号、18号、13号染色体异常，作为“正常信号参照集”，用于设定质量阈值、校准信号偏倚、训练融合模型。
+ 
+\textbf{-}男胎阳性样本：经临床确认存在某类染色体异常，作为“弱监督标签集”，仅提供异常信号方向性指引，避免直接用于阈值确定导致的偏倚。
+
+\textbf{-}女胎评估样本：目标判定对象，无明确异常标签，需通过迁移男胎参照的判定规则实现异常推断。
+
+
+\subsubsection{质量控制与一致性检验}
+
+\textbf{（1）样本质量控制}
+
+由于测序过程质量差的样本，如GC含量极端等，会导致“技术过程异常”误判为“生物学染色体异常”，若直接进入建模会严重降低判定准确性。因此需以男胎阴性样本为基准，通过分位数自适应设定各质量指标的合理范围。
+
+对每类过程质量指标，在男胎阴性样本中按分位数确定上下界。
+
+以GC含量为例，将男胎阴性样本的GC含量按升序排序为$g_{(1)} \leq g_{(2)} \leq \dots \leq g_{(N_{\text{阴}})}$，取下界分位数$p_L=0.05$、上界分位数$p_U=0.95$，计算下界位置$r_L=\lceil p_L \cdot N_{\text{阴}} \rceil$、上界位置$r_U=\lfloor p_U \cdot N_{\text{阴}} \rfloor$，得到GC含量合理范围。
+
+总读段数、比对率、重复率、过滤率均按此方法设定各自的上界或下界阈值；若某指标样本分布异常，则回退至常识区间微调。
+
+样本筛选规则：统计样本未达标的过程质量指标个数$c$：
+若$c \geq 3$，判为“无效-复检”，表示技术层面数据不可靠；
+ 若$c=1$或$c=2$，标记为“可疑”，后续需结合其他证据谨慎判定；
+  若$c=0$，记为“通过”，进入后续生物学信号分析。
+
+
+
+
+\textbf{（2）X染色体信号一致性检查}
+
+
+X染色体Z值对性别标注错误、样本污染/混样、极端测序偏倚敏感，是重要的异常预警信号；但$Z_X$同时受GC含量、读段数、BMI等过程因素干扰，直接阈值化会将“过程偏倚”误判为“信号异常”。因此需先在男胎阴性样本中剥离系统偏倚，提取纯生物学信号残差，再进行离群判定。具体实施过程如下：
+\begin{itemize}
+    \item 
+ 偏倚剥离：在通过质量检查的男胎阴性样本上，拟合$Z_X$与过程因素、个体特征的稳健回归模型，剥离系统影响：
+  \begin{equation}
+Z_X = a_0 + a_1 \cdot \mathrm{GC} + a_2 \cdot \mathrm{reads} + a_3 \cdot \mathrm{map\_rate} + a_4 \cdot \mathrm{dup\_rate} + a_5 \cdot \mathrm{BMI} + a_6 \cdot \mathrm{GA} + \varepsilon
+\end{equation}
+  其中$\varepsilon$为残差，代表剥离系统偏倚后的纯X染色体信号，计算残差$r_X = Z_X - \hat{Z}_X$（$\hat{Z}_X$为回归预测值）。
+
+\item 残差标准化：采用“中位数-MAD”方法对$r_X$标准化，消除量纲差异：
+  \begin{equation}
+\begin{cases}
+z(X) &= \frac{r_X - \mathrm{median}(r_X)}{1.4826 \times \mathrm{MAD}(r_X)}\\ \mathrm{MAD}(r_X) &= \mathrm{median}(|r_X - \mathrm{median}(r_X)|)
+\end{cases}
+\end{equation}
+  其中1.4826为正态分布下MAD与标准差的换算系数，确保标准化后数据可比。
+
+\item 一致性判定：设定阈值$T_X=3$，若$|z(X)| > T_X$，判为“无效-复检”,可能存在性别标注错误或样本污染；否则通过检查。
+\end{itemize}
+
+
+
+
+\subsubsection{多源证据融合与概率校准}
+
+由于单一证据易受噪声干扰，稳定性差；仅看“整体偏离”可能漏掉单条染色体的极端异常；男胎阳性样本标签有限，无法直接训练分类模型。因此需融合“整体偏离、单维离群、弱监督区分”三类互补证据，生成兼顾稳定性与敏感性的异常概率，且通过校准确保概率含义直观、跨样本可比。
+
+step1：特征稳健标准化
+
+以男胎阴性样本的中位数与MAD为基准，把所有特征标准化到同一尺度，得到标准化向量$\tilde{\mathbf{x}}$。
+
+
+step2：整体偏离计算（鲁棒马氏距离）
+
+在男胎阴性样本上用最小协方差行列式估计正常中心$\hat{\boldsymbol{\mu}}$与协方差$\hat{\boldsymbol{\Sigma}}$，计算
+\[
+D^2 = (\tilde{\mathbf{x}} - \hat{\boldsymbol{\mu}})^\top \hat{\boldsymbol{\Sigma}}^{-1} (\tilde{\mathbf{x}} - \hat{\boldsymbol{\mu}})
+\]
+
+把所有男胎阴性样本的$D^2$从小到大排序为$d_{(1)}^2 \le \cdots \le d_{(N_{\text{阴}})}^2$。某个样本的$D^2$在这串序列中的位置记为$r$，则它的“整体偏离尾部比例”定义为：
+
+\[
+p_{\text{整体}} = \frac{N_{\text{阴}} - r + 1}{N_{\text{阴}}} \in (0,1)
+\]
+
+
+step3：单维离群计算
+
+对每一维标准化特征计算稳健$z$分并据此得到双尾显著性$p_j$，再用“至少一维显著”的方式合成：
+
+\[
+p_{\text{单维}} = 1 - \prod_j (1 - p_j) \in (0,1),
+\]
+
+这样某一维特别极端的样本不会被漏掉。
+
+step4：弱监督区分
+
+用男胎阴性样本作0类、男胎阳性样本作1类，训练一个简洁的逻辑回归，得到方向性分数：
+
+\[
+s_{\text{区分}} = \frac{1}{1 + \exp[-(b_0 + \mathbf{b}^\top \tilde{\mathbf{x}})]} \in (0,1)
+\]
+
+step5：学得式融合与概率校准
+
+把$\{p_{\text{整体}}, p_{\text{单维}}, s_{\text{区分}}\}$作为3个输入，再次训练一个逻辑回归得到融合打分函数。
+
+
+\subsubsection{分层阈值策略与迁移判定}
+
+
+\textbf{（1）分层阈值策略}
+
+由于孕妇BMI与孕周（GA）会影响染色体信号强度，若采用全局统一阈值，会导致部分分层假阳性率过高。设目标假阳性率为$\alpha \in (0,1)$，设置保护裕度$\delta \ge 0$，用于抵消抽样波动，并给定最小层样本量阈值$n_{\min}$与收缩强度参数$K > 0$。按孕周与BMI的分位数对男胎阴性样本进行分层，可得到二维层。以下计算自上而下进行，以便下游层“继承/收缩”上游层的阈值。
+
+对任一层$\ell$，记该层男胎阴性样本的折外异常概率为$\{p_1^{(\ell)}, \dots, p_{n_\ell}^{(\ell)}\}$，为在该层控制假阳性率不超过$\alpha$（容许$\delta$的裕度），取序位：
+
+\[
+r_\ell = \lceil (1 - \alpha - \delta) n_\ell \rceil
+\]
+
+并定义该层的原始阈值为：
+
+\[
+\tau_\ell^{\mathrm{raw}} = p_{(r_\ell)}^{(\ell)}
+\]
+
+表明若未来以规则$\hat{p} \ge \tau_\ell^{\mathrm{raw}}$判为可疑，则在同分布假设下，该层男胎阴性样本被判可疑的期望比例约为$\alpha + \delta$。
+
+当样本量不足时采用层级继承/退化。若$n_\ell < n_{\min}$，则不直接使用$\tau_\ell^{\mathrm{raw}}$，而是沿用上级层的最终阈值并以此作为该层阈值的基准。
+
+\textbf{（2）女胎异常迁移判定}
+
+将上文男胎参照的判定规则迁移至女胎样本，具体步骤如下：
+
+\textbf{前置判定}：对任一女胎样本，先执行“质量控制”与“X染色体信号一致性检验”，任一未通过则直接给出“无效–复检”的技术性结论，不进入后续判定；
+
+ \textbf{异常概率计算}：两项检查均通过时，用全局映射函数$g_{\text{all}}$将该样本的融合打分$s_{\text{融合}}$映射为异常概率$\hat{p}$；
+
+ \textbf{阈值匹配与结果输出}：根据女胎的GA/BMI确定所属分层，调取对应分层阈值$\tau$：
+   -若$\hat{p} \geq \tau$：判为“建议复检”，需进一步临床检查确认；
+   若$\hat{p} < \tau$：判为“通过”，无明显染色体异常；
+   
+ \textbf{可解释性补充}：在与男胎阴性参照集一致的稳健标准化坐标下，计算各特征的稳健z分，列示绝对偏离幅度最大的三项作为判定依据；同时在分层层面统计“建议复检”占比，监测是否与预设假阳性率一致。
+
+
+\subsection{求解结果}
+
+本问目标是对女性评估集判定是否异常。模型求解的核心结论如下：
+
+% —— 女胎异常判定：总体结果 + 概率分布图 ——
+\begin{table}[H]
+\centering
+\caption{女胎异常判定——总体结果概览}
+\label{tab:q4-overview}
+\begin{tabular}{l c}
+\toprule
+项目 & 数值/说明 \\
+\midrule
+分层策略 & 按孕周分层（自动选择） \\
+阈值表现 & 男胎阴性上总体假阳率约 5.4\%，与目标一致 \\
+样本总数 & 605 \\
+QC 失败（重测） & 14 \\
+有效评估样本 & 591 \\
+异常/建议复检 & 84（占有效样本 14.2\%） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+为更直观展示“通过”与“建议复检”的区分度，给出两类样本的异常概率分布直方图（图~\ref{fig:q4-prob-dist}）。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=.62\textwidth]{prob_dist_eval.png}
+  \caption{评估样本的异常概率分布}
+  \label{fig:q4-prob-dist}
+\end{figure}
+
+多数“通过”样本集中在较低概率区间（约 0–0.15），而“建议复检”集中在较高区间（约 0.35–1.0），两者重叠极少；这一分布形态与按孕周分层得到的阈值位置一致，说明阈值设置稳定、判定结果具有良好的可解释性与可迁移性。
+
+
+
+为突出目标染色体与全局质量的证据，图~\ref{fig:female-evidence-5} 第一行对比 $13/18/21$ 号染色体 Z 值在去偏后的残差分布；第二行展示两项全局质量特征。可以看到，被判为异常/建议复检的样本更易落入目标染色体残差与全局质量特征的极端尾部，表明“目标染色体信号 + 全局质量形态”两个维度上均存在偏离。
+
+% —— 统一子图宽度与间距（五图同宽、第二行整体居中）——
+\newlength{\subfigW}   \setlength{\subfigW}{0.305\textwidth}   % 每个子图的宽度
+\newlength{\subfigSep} \setlength{\subfigSep}{0.030\textwidth} % 子图间距
+\newlength{\sidepad}   \setlength{\sidepad}{\dimexpr(\textwidth - 2\subfigW - \subfigSep)/2\relax}
+
+\captionsetup[subfigure]{justification=centering,singlelinecheck=false,font=small}
+
+\begin{figure}[H]
+  \centering
+  %—— 第1行：3 张 ——%
+  \begin{subfigure}[t]{\subfigW}
+    \centering
+    \includegraphics[width=\linewidth]{dist_13号染色体的Z值_resid.png}
+    \caption{$13$ 号染色体去偏残差}
+  \end{subfigure}\hspace{\subfigSep}
+  \begin{subfigure}[t]{\subfigW}
+    \centering
+    \includegraphics[width=\linewidth]{dist_18号染色体的Z值_resid.png}
+    \caption{$18$ 号染色体去偏残差}
+  \end{subfigure}\hspace{\subfigSep}
+  \begin{subfigure}[t]{\subfigW}
+    \centering
+    \includegraphics[width=\linewidth]{dist_21号染色体的Z值_resid.png}
+    \caption{$21$ 号染色体去偏残差}
+  \end{subfigure}
+
+  \vspace{0.6em}
+
+  %—— 第2行：2 张（整体水平居中） ——%
+  \makebox[\textwidth][c]{%
+    \hspace{\sidepad}%
+    \begin{subfigure}[t]{\subfigW}
+      \centering
+      \includegraphics[width=\linewidth]{dist_log_reads.png}
+      \caption{测序覆盖（$\log$ reads）}
+    \end{subfigure}\hspace{\subfigSep}%
+    \begin{subfigure}[t]{\subfigW}
+      \centering
+      \includegraphics[width=\linewidth]{dist_GC含量.png}
+      \caption{整体 GC 含量}
+    \end{subfigure}%
+    \hspace{\sidepad}%
+  }
+
+  \caption{女胎（建议复检）与男胎阴性在目标染色体与全局质量特征上的分布对比}
+  \label{fig:female-evidence-5}
+\end{figure}
+
+此外，本文对所有判为异常/建议复检的样本统计其“最突出的异常证据”的出现频次。由图~\ref{fig:top-outliers} 可见，去偏后的目标染色体残差、整体 GC 与测序覆盖是最常被触发的证据来源，与图~\ref{fig:female-evidence-5} 的分布特征一致。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=.6\textwidth]{bar_top_outliers.png}
+  \caption{异常样本主要证据频次}
+  \label{fig:top-outliers}
+\end{figure}
+
+阈值如何得到并满足目标假阳性：图~\ref{fig:cdf-threshold} 展示男胎阴性样本经校准后的异常概率的累计分布及阈值位置；我们在该曲线上选取使“阈值右侧样本占比”与预设的假阳性比例最接近的点作为阈值，因此迁移到女性评估集后，整体异常比例不会因阈值偏移而系统性偏高或偏低。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=.4\textwidth]{cdf_neg_threshold.png}
+  \caption{男胎阴性样本的异常概率累计比例与阈值位置}
+  \label{fig:cdf-threshold}
+\end{figure}
+
+\noindent\textbf{小结：} 在男胎阴性上以孕周分层（GA）控制误报率（实测约 $5.4\%$），并据此对女性样本作出“异常/阴性/重测”判定；$605$ 例中，重测 $14$ 例（QC 失败），有效评估 $591$ 例，其中异常/建议复检 $84$ 例（$14.2\%$）。异常样本在目标染色体残差与全局质量特征上同时偏离参考分布，证据一致、可解释性强。
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{模型的评价}
+
+\subsection{模型的优点}
+\begin{enumerate}[label=(\arabic*),leftmargin=2em]
+\item 问题一本文根据前沿文献筛选出男胎Y染色体浓度的影响因素，再判断其与相关指标为非线性关系，最后根据梯度提升树回归得到多元非线性函数，求解思路思路清晰严谨。
+\item 问题二根据题目的单一目标构造出优化目标函数，并添加组内达标的临床安全约束，再用动态规划算法直接求解全局最优。第三问由于引入了更多变量，采用前缀和优化算法。模型贴合题目与实际，算法求解效率高。
+\item 问题四本文可以在女胎检测结果不准确的情况下通过男胎数据刻画女胎染色体异常范围，模型思路新颖且可行。
+\end{enumerate}
+
+\subsection{模型的缺点}
+\begin{enumerate}[label=(\arabic*),leftmargin=2em]
+\item 模型的关键参数仍依赖经验设定与实际调试，如时间权重曲线形状、分层最小样本量与阈值收缩强度，需用更大规模临床数据进一步标定。
+\end{enumerate}
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% 参考文献
+\nocite{*}
+\begin{thebibliography}{1}
+
+\bibitem{deng2022}
+Deng C, Liu S. Factors affecting the fetal fraction in noninvasive prenatal screening [J].Front Pediatr, 2022, 10: 812781.
+
+\bibitem{deng2023} Deng C, Liu J, Liu S,et al. Maternal and fetal factors influencing fetal fraction[J]. Front Pediatr, 2023, 11: 1066178. 
+
+\bibitem{Lyu2018GBDTCPU}吕依蓉, 孙斌, 喻之斌.基于梯度提升回归树的处理器性能数据挖掘研究[J].集成技术, 2018, 7(5): 47-57.
+
+\bibitem{lv2017} 吕佳. 梯度提升回归树算法研究及改进[D]. 上海: 上海交通大学, 2017.
+
+\bibitem{Liao2005DP}
+廖慧芬, 邵小兵. 动态规划算法的原理及应用[J]. 中国科技信息, 2005, (21A): 42-42.
+
+\bibitem{ladner1980} Ladner R E, Fischer M J. Parallel prefix computation[J]. Journal of the ACM, 1980, 27(4): 831-838. 
+
+\bibitem{who2021}
+World Health Organization. Adolescent pregnancy [EB/OL].[2025-09-06].\\
+https://www.who.int/news-room/fact-sheets/detail/adolescent-pregnancy.
+
+
+\bibitem{miltoft2020} Miltoft C B, Rode L, Bundgaard J R, Johansen P, Tabor A. Cell-free fetal DNA in the early and late first trimester[J]. Fetal Diagnosis and Therapy, 2020, 47(3): 228-236.
+
+\bibitem{lopes2020} Lopes J L, Lopes G S, Enninga E A L,et al. Most noninvasive prenatal screens failing due to inadequate fetal cell free DNA are negative for trisomy when repeated[J]. Prenatal Diagnosis, 2020, 40(7): 831-837.
+
+\bibitem{ashoor2013} Ashoor G, Syngelaki A, Poon L, Rezende J C, Nicolaides K H. Fetal fraction in maternal plasma cell-free DNA at 11–13 weeks' gestation: relation to maternal and fetal characteristics[J]. Ultrasound in Obstetrics \& Gynecology, 2013, 41(1): 26-32.
+
+
+\end{thebibliography}
+
+\textbf{本参赛队未使用任何AI工具}
+\newpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% 附录
+\begin{appendices}
+\section{补充图片}
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}{0.48\linewidth}
+    \centering\includegraphics[width=\linewidth]{q3_ready_group1_ci.png}
+    \caption{组1}
+  \end{subfigure}\hfill
+  \begin{subfigure}{0.48\linewidth}
+    \centering\includegraphics[width=\linewidth]{q3_ready_group2_ci.png}
+    \caption{组2}
+  \end{subfigure}\\[0.6em]
+  \begin{subfigure}{0.48\linewidth}
+    \centering\includegraphics[width=\linewidth]{q3_ready_group3_ci.png}
+    \caption{组3}
+  \end{subfigure}\hfill
+  \begin{subfigure}{0.48\linewidth}
+    \centering\includegraphics[width=\linewidth]{q3_ready_group4_ci.png}
+    \caption{组4}
+  \end{subfigure}\\[0.6em]
+  \begin{subfigure}{0.48\linewidth}
+    \centering\includegraphics[width=\linewidth]{q3_ready_group5_ci.png}
+    \caption{组5}
+  \end{subfigure}
+  \caption{各组单独的达标比例曲线与 95\% 置信带}
+  \label{fig:q3-groups-ci-single}
+\end{figure}
+\section{文件列表}
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{LL}
+\toprule
+文件名   & 功能描述 \\
+\midrule
+t1main.py & 问题一主要代码 \\
+t2main.py & 问题二主要代码 \\
+t3main.py & 问题三主要代码 \\
+t4main.py & 问题四主要代码 \\
+\bottomrule
+\end{tabularx}
+\label{tab:文件列表}
+\end{table}
+
+\section{代码}
+\noindent t1main.py
+\lstinputlisting[language=python]{code/t1main.py}
+t2main.py
+\lstinputlisting[language=python]{code/t2main.py}
+t3main.py
+\lstinputlisting[language=python]{code/t3main.py}
+t4main.py
+\lstinputlisting[language=python]{code/t4main.py}
+\end{appendices}
+\end{document}
+
+
+%%%%%双图模板%%%%%%
+\begin{figure}
+\centering
+\subcaptionbox{炉温曲线示意图\label{fig:双图a}}
+{\includegraphics[width=.4\textwidth]{炉温曲线示意图.png}}
+\subcaptionbox{问题1炉温曲线\label{fig:双图b}}
+{\includegraphics[width=.4\textwidth]{问题1炉温曲线.png}}
+\caption{双图}\label{fig:双图}
+\end{figure} 
+%%%%%双图模板%%%%%%
