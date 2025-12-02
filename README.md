@@ -1,7 +1,11 @@
 # CUMCM-2025-Problem-C
 数模国赛2025 C题论文---湖北省赛区一等奖-WHUT
+# **NIPT 检测策略优化与女胎异常识别模型研究**  
+## ——湖北省赛区一等奖（WHUT）
 
-code中t1\t2\t3.py为完整问题代码，t1main\t2main\t3main\t4main.py为主要代码
+本仓库包含论文 **《基于动态规划算法的 NIPT 检测策略与女胎异常识别方法研究》** 的全部源代码与 LaTeX 模板，系统解决无创产前检测（Non-Invasive Prenatal Testing，NIPT）在 **检测时点规划、风险最优化、女胎异常识别** 中的关键建模问题。
 
-template.tex为latex源码，可以自行下载查看。
+---
+
+# 📂 仓库结构
 
